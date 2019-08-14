@@ -86,13 +86,6 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-d1, m1, y1 = [int(x) for x in input("Enter first"
-        " person's date(DD/MM/YYYY) : ").split('/')]
-b1 = date(y1, m1, d1)
-d2, m2, y2 = [int(x) for x in input("Enter second"
-        " person's date(DD/MM/YYYY) : ").split('/')]
-b2 = date(y2, m2, d2)
-
 if args.year:
     years = args.year
 else:
@@ -154,13 +147,14 @@ def get_metric(bucket_name, storage_type, month, year):
     return response
 
 
-
 for reg in regions:
     client_cloudwatch = boto3.client("cloudwatch", region_name=reg)
     print(f'\nregion: {reg}')
     for st in storage_type:
         for year in years:
+            print(year)
             for month in months:
+                print(month)
                 for bucket in buckets:
                     if client_s3.get_bucket_location(Bucket = bucket['Name'])['LocationConstraint'] == reg:
                         res = get_metric(bucket, st, month, year)
