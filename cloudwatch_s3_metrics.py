@@ -143,4 +143,4 @@ for reg in regions:
                             tags = []
                             for tag in i.values():
                                 tags.append(tag)
-                            print(str(year) + '-' + str(month), storage, bucket['Name'], 'tag_key:', tags.pop(0), 'tag_value:', tags.pop(0), bucket_metric['Datapoints'][0]['Maximum'])
+                            print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tag_key: {(tags.pop(0))} | tag_value: {(tags.pop(0))} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
