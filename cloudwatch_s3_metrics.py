@@ -1,19 +1,23 @@
-import boto3
+import sys
 import argparse
 import datetime as dt
+import boto3
 from botocore.exceptions import ClientError
 
 
-#create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
-#add options(+): -r region | -p period or period input
-#add output(+): storage_type | year | month | bucket_name | bucket_size
-#add underline output: sum of buckets per project for each month in a period
-##and maybe: output report to csv
-tag = []
-sm, sy = [int(x) for x in input("Enter start date (MM-YYYY) (month including):\n").split('-')]
-em, ey = [int(x) for x in input("Enter end date (MM-YYYY) (month including):\n").split('-')]
+#+ create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
+#+ add options -r region | -p period or period input
+#+ add output storages | year | month | bucket_name | bucket_size
+#- add underline output: bucketsize sum of buckets per project for each month in a period
+#+ catch untagged buckets to file and pass them
+##maybe: represent output results as a list of dicts
+##maybe: output report to csv
 
-storage_type = [
+
+sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
+em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
+
+storages = [
     'StandardStorage',
     # 'StandardIAStorage',
     # 'ReducedRedundancyStorage',
@@ -29,8 +33,8 @@ parser = argparse.ArgumentParser(
     )
 
 parser.add_argument(
-    "-r",
-    "--region",
+    '-r',
+    '--region',
     action = 'store',
     dest = 'region',
     nargs = '*',
@@ -63,17 +67,16 @@ else:
     try:
         client_ec2 = boto3.client('ec2')
         regions = [region['RegionName'] for region in client_ec2.describe_regions()['Regions']]
-    except:
-        print('client_ec2 connection failed')
-        regions = None
+    except Exception as e:
+        print(e)
+        sys.exit('exception at boto3.client(\'ec2\')')
 
 try:
-    client_s3 = boto3.client("s3")
-    buckets = client_s3.list_buckets()["Buckets"]
-except:
-    print('client_s3 connection failed')
-    buckets = None
-
+    client_s3 = boto3.client('s3')
+    buckets = client_s3.list_buckets()['Buckets']
+except Exception as e:
+    print(e)
+    sys.exit('exception at boto3.client(\'s3\')')
 
 
 def period_iterator(start_month, start_year, end_month, end_year):
@@ -88,18 +91,18 @@ def period_iterator(start_month, start_year, end_month, end_year):
             year += 1
 
 
-def get_metric(bucket_name, storage_type, month, next_month, year, next_year):
+def get_metric(bucket_name, storage, month, next_month, year, next_year):
     response = client_cloudwatch.get_metric_statistics(
         Namespace = 'AWS/S3',
         MetricName = 'BucketSizeBytes',
         Dimensions = [
         {
             'Name': 'BucketName',
-            'Value': bucket["Name"]
+            'Value': bucket['Name']
         },
         {
             'Name': 'StorageType',
-            'Value': storage_type
+            'Value': storage
         },
         ],
         StartTime = dt.datetime(year, month, 1, 0, 0),
@@ -113,28 +116,31 @@ def get_metric(bucket_name, storage_type, month, next_month, year, next_year):
     return response
 
 for reg in regions:
-    client_cloudwatch = boto3.client("cloudwatch", region_name=reg)
+    client_cloudwatch = boto3.client('cloudwatch', region_name=reg)
     print(f'\nregion: {reg}')
-    for st in storage_type:
-        for i in period_iterator(sm, sy, em, ey):
-            month, year = i
-            next_month, next_year = month + 1, year
+    for storage in storages:
+        for p in period_iterator(sm, sy, em, ey):
+            month, year = p
+            next_month, next_year = month, year
+            next_month += 1
+            next_year += 1
             if next_month == 13:
                 next_month, next_year = 1, year + 1
             else: pass
             for bucket in buckets:
                 if client_s3.get_bucket_location(Bucket=bucket['Name'])['LocationConstraint'] == reg:
+                    bucket_tags = None
                     try:
-                        res_tag = client_s3.get_bucket_tagging(Bucket=bucket['Name'])
+                        bucket_tags = client_s3.get_bucket_tagging(Bucket=bucket['Name'])
                     except ClientError:
+                        f=open('untagged_buckets.txt', 'a+')
+                        f.write(reg + ': ' + bucket['Name'] + '\n')
+                        f.close()
                         pass
-                    res_metric = get_metric(bucket, st, month, next_month, year, next_year)
-                    if len(res_metric['Datapoints']) > 0:
-                        for i in res_tag['TagSet']:
-                            for v in i.values():
-                                tag.append(v)
-                            print(str(year) + '-' + str(month), st, bucket['Name'], 'tag_key:', tag.pop(0), 'tag_value:', tag.pop(0), res_metric['Datapoints'][0]['Maximum'])
-
-# def sum():
-#     res_sum
-#     return sum_res
+                    bucket_metric = get_metric(bucket, storage, month, next_month, year, next_year)
+                    if len(bucket_metric['Datapoints']) > 0 and bucket_tags is not None:
+                        for i in bucket_tags['TagSet']:
+                            tags = []
+                            for tag in i.values():
+                                tags.append(tag)
+                            print(str(year) + '-' + str(month), storage, bucket['Name'], 'tag_key:', tags.pop(0), 'tag_value:', tags.pop(0), bucket_metric['Datapoints'][0]['Maximum'])
