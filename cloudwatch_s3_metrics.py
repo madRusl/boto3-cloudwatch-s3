@@ -1,14 +1,15 @@
 import boto3
 import argparse
 import datetime as dt
+from botocore.exceptions import ClientError
+
 
 #create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
 #add options(+): -r region | -p period or period input
 #add output(+): storage_type | year | month | bucket_name | bucket_size
-#add underline output: sum by month for all buckets per project(?)
+#add underline output: sum of buckets per project for each month in a period
 ##and maybe: output report to csv
-
-
+tag = []
 sm, sy = [int(x) for x in input("Enter start date (MM-YYYY) (month including):\n").split('-')]
 em, ey = [int(x) for x in input("Enter end date (MM-YYYY) (month including):\n").split('-')]
 
@@ -64,12 +65,15 @@ else:
         regions = [region['RegionName'] for region in client_ec2.describe_regions()['Regions']]
     except:
         print('client_ec2 connection failed')
+        regions = None
 
 try:
     client_s3 = boto3.client("s3")
     buckets = client_s3.list_buckets()["Buckets"]
 except:
     print('client_s3 connection failed')
+    buckets = None
+
 
 
 def period_iterator(start_month, start_year, end_month, end_year):
@@ -119,7 +123,18 @@ for reg in regions:
                 next_month, next_year = 1, year + 1
             else: pass
             for bucket in buckets:
-                if client_s3.get_bucket_location(Bucket = bucket['Name'])['LocationConstraint'] == reg:
-                    res = get_metric(bucket, st, month, next_month, year, next_year)
-                    if len(res['Datapoints']) > 0:
-                        print(str(year) + '-' + str(month), st, bucket['Name'], res['Datapoints'][0]['Maximum'])
+                if client_s3.get_bucket_location(Bucket=bucket['Name'])['LocationConstraint'] == reg:
+                    try:
+                        res_tag = client_s3.get_bucket_tagging(Bucket=bucket['Name'])
+                    except ClientError:
+                        pass
+                    res_metric = get_metric(bucket, st, month, next_month, year, next_year)
+                    if len(res_metric['Datapoints']) > 0:
+                        for i in res_tag['TagSet']:
+                            for v in i.values():
+                                tag.append(v)
+                            print(str(year) + '-' + str(month), st, bucket['Name'], 'tag_key:', tag.pop(0), 'tag_value:', tag.pop(0), res_metric['Datapoints'][0]['Maximum'])
+
+# def sum():
+#     res_sum
+#     return sum_res
