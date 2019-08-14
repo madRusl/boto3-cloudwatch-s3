@@ -3,8 +3,15 @@ import argparse
 import datetime as dt
 from dateutil.rrule import rrule, MONTHLY
 
-years = []
-months = []
+#create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
+#add options(+): -r region | -p period or period input
+#add output(+): storage_type | year | month | bucket_name | bucket_size
+#add underline output: sum by month for all buckets per project(?)
+##and maybe: output report to csv
+
+
+sm, sy = [int(x) for x in input("Enter start date (MM-YYYY) (month including):\n").split('-')]
+em, ey = [int(x) for x in input("Enter end date (MM-YYYY) (month including):\n").split('-')]
 
 storage_type = [
     'StandardStorage',
@@ -20,42 +27,6 @@ parser = argparse.ArgumentParser(
     description='Get s3 metric statistics by region',
     formatter_class=argparse.RawTextHelpFormatter
     )
-
-parser.add_argument(
-    '-s',
-    "--start_date",
-    help="the start date - format YYYY-MM-DD",
-    dest = 'start_date',
-    required=True,
-    type=dt.date.fromisoformat)
-
-parser.add_argument(
-    '-e',
-    "--end_date",
-    help="the end date - format YYYY-MM-DD",
-    dest = 'end_date',
-    required=True,
-    type=dt.date.fromisoformat)
-
-parser.add_argument(
-    "-y",
-    "--year",
-    action = 'store',
-    dest = 'year',
-    nargs = '*',
-    help = 'Specify one or multiple years (default: current)',
-    type=int
-)
-
-parser.add_argument(
-    "-m",
-    "--month",
-    action = 'store',
-    dest = 'month',
-    nargs = '*',
-    help = 'Specify one or multiple month (default: all)',
-    type=int
-)
 
 parser.add_argument(
     "-r",
@@ -86,23 +57,6 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-d1, m1, y1 = [int(x) for x in input("Enter first"
-        " person's date(DD/MM/YYYY) : ").split('/')]
-b1 = date(y1, m1, d1)
-d2, m2, y2 = [int(x) for x in input("Enter second"
-        " person's date(DD/MM/YYYY) : ").split('/')]
-b2 = date(y2, m2, d2)
-
-if args.year:
-    years = args.year
-else:
-    years.append(dt.datetime.now().year)
-
-if args.month:
-    months = args.month
-else:
-    months = [1,2,3,4,5,6,7,8,9,10,11]
-
 if args.region:
     regions = args.region
 else:
@@ -119,17 +73,19 @@ except:
     print('client_s3 connection failed')
 
 
-def month_iter(start_month, start_year, end_month, end_year):
-    start = dt.datetime(start_year, start_month, 1)
-    end = dt.datetime(end_year, end_month, 1)
-    return ((d.month, d.year) for d in rrule(MONTHLY, dtstart=start, until=end))
+def period_iterator(start_month, start_year, end_month, end_year):
+    month, year = start_month, start_year
+    while True:
+        yield month, year
+        if (month, year) == (end_month, end_year):
+            return
+        month += 1
+        if (month > 12):
+            month = 1
+            year += 1
 
-# for month_year in month_iter(start_month = 1, start_year=2018, end_month=12, end_year=2019):
-#     month = month_year[0]
-#     year = month_year[1]
-#     print(str(year) + '-' + str(month))
 
-def get_metric(bucket_name, storage_type, month, year):
+def get_metric(bucket_name, storage_type, month, next_month, year, next_year):
     response = client_cloudwatch.get_metric_statistics(
         Namespace = 'AWS/S3',
         MetricName = 'BucketSizeBytes',
@@ -144,7 +100,7 @@ def get_metric(bucket_name, storage_type, month, year):
         },
         ],
         StartTime = dt.datetime(year, month, 1, 0, 0),
-        EndTime = dt.datetime(year, month + 1, 1, 0, 1),
+        EndTime = dt.datetime(next_year, next_month, 1, 0, 1),
         Period = 86400,
         Statistics = [
         'Maximum',
@@ -153,23 +109,18 @@ def get_metric(bucket_name, storage_type, month, year):
     )
     return response
 
-
-
 for reg in regions:
     client_cloudwatch = boto3.client("cloudwatch", region_name=reg)
     print(f'\nregion: {reg}')
     for st in storage_type:
-        for year in years:
-            for month in months:
-                for bucket in buckets:
-                    if client_s3.get_bucket_location(Bucket = bucket['Name'])['LocationConstraint'] == reg:
-                        res = get_metric(bucket, st, month, year)
-                        if len(res['Datapoints']) > 0:
-                            print(str(year) + '-' + str(month), st, bucket['Name'], res['Datapoints'][0]['Maximum'])
-
-
-#create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
-#add options: -r region | -p period
-#add output: storage_type | year | month | bucket_name | bucket_size
-#add underline output: sum by month for all buckets per project(?)
-##and maybe: output report to csv
+        for i in period_iterator(sm, sy, em, ey):
+            month, year = i
+            next_month, next_year = month + 1, year
+            if next_month == 13:
+                next_month, next_year = 1, year + 1
+            else: pass
+            for bucket in buckets:
+                if client_s3.get_bucket_location(Bucket = bucket['Name'])['LocationConstraint'] == reg:
+                    res = get_metric(bucket, st, month, next_month, year, next_year)
+                    if len(res['Datapoints']) > 0:
+                        print(str(year) + '-' + str(month), st, bucket['Name'], res['Datapoints'][0]['Maximum'])
