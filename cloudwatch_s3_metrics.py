@@ -1,7 +1,6 @@
 import boto3
 import argparse
 import datetime as dt
-from dateutil.rrule import rrule, MONTHLY
 
 #create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
 #add options(+): -r region | -p period or period input
