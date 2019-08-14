@@ -1,7 +1,7 @@
 import sys
 import argparse
-import datetime as dt
 import boto3
+from datetime import datetime
 from botocore.exceptions import ClientError
 
 
@@ -105,8 +105,8 @@ def get_metric(bucket_name, storage, month, next_month, year, next_year):
             'Value': storage
         },
         ],
-        StartTime = dt.datetime(year, month, 1, 0, 0),
-        EndTime = dt.datetime(next_year, next_month, 1, 0, 1),
+        StartTime = datetime(year, month, 1, 0, 0),
+        EndTime = datetime(next_year, next_month, 1, 0, 1),
         Period = 86400,
         Statistics = [
         'Maximum',
