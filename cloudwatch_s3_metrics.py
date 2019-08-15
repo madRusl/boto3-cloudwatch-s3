@@ -5,7 +5,6 @@ from datetime import datetime
 from botocore.exceptions import ClientError
 
 
-#fix months
 #+ create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
 #+ add options -r region | -p period or period input
 #+ add output storages | year | month | bucket_name | bucket_size
@@ -128,6 +127,7 @@ for reg in regions:
                 next_month, next_year = 1, year + 1
             else: pass
             for bucket in buckets:
+                tags = []
                 if client_s3.get_bucket_location(Bucket=bucket['Name'])['LocationConstraint'] == reg:
                     bucket_tags = None
                     try:
@@ -138,11 +138,10 @@ for reg in regions:
                         f.close()
                         pass
                     bucket_metric = get_metric(bucket, storage, month, next_month, year, next_year)
-
                     if len(bucket_metric['Datapoints']) > 0 and bucket_tags is not None:
                         for i in bucket_tags['TagSet']:
-                            tags = []
                             for tag in i.values():
                                 tags.append(tag)
-                            print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tag_key: {(tags.pop(0))} | tag_value: {(tags.pop(0))} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
-                            print(bucket_metric['Datapoints'])
+                            print(tags)    
+                            # print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tag_key: {(tags.pop(0))} | tag_value: {(tags.pop(0))} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
+                        print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tags: {' '.join(str(t) for t in tags)} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
