@@ -5,6 +5,7 @@ from datetime import datetime
 from botocore.exceptions import ClientError
 
 
+#fix months
 #+ create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
 #+ add options -r region | -p period or period input
 #+ add output storages | year | month | bucket_name | bucket_size
@@ -123,7 +124,6 @@ for reg in regions:
             month, year = p
             next_month, next_year = month, year
             next_month += 1
-            next_year += 1
             if next_month == 13:
                 next_month, next_year = 1, year + 1
             else: pass
@@ -138,9 +138,11 @@ for reg in regions:
                         f.close()
                         pass
                     bucket_metric = get_metric(bucket, storage, month, next_month, year, next_year)
+
                     if len(bucket_metric['Datapoints']) > 0 and bucket_tags is not None:
                         for i in bucket_tags['TagSet']:
                             tags = []
                             for tag in i.values():
                                 tags.append(tag)
                             print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tag_key: {(tags.pop(0))} | tag_value: {(tags.pop(0))} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
+                            print(bucket_metric['Datapoints'])
