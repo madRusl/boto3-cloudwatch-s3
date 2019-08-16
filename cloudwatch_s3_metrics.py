@@ -3,6 +3,7 @@ import argparse
 import boto3
 from datetime import datetime
 from botocore.exceptions import ClientError
+import json
 
 
 #+ create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
@@ -69,14 +70,12 @@ else:
         regions = [region['RegionName'] for region in client_ec2.describe_regions()['Regions']]
     except Exception as e:
         print(e)
-        sys.exit('exception at boto3.client(\'ec2\')')
 
 try:
     client_s3 = boto3.client('s3')
     buckets = client_s3.list_buckets()['Buckets']
 except Exception as e:
     print(e)
-    sys.exit('exception at boto3.client(\'s3\')')
 
 
 def period_iterator(start_month, start_year, end_month, end_year):
@@ -115,6 +114,8 @@ def get_metric(bucket_name, storage, month, next_month, year, next_year):
     )
     return response
 
+result_list = []
+
 for reg in regions:
     client_cloudwatch = boto3.client('cloudwatch', region_name=reg)
     print(f'\nregion: {reg}')
@@ -128,8 +129,10 @@ for reg in regions:
             else: pass
             for bucket in buckets:
                 tags = []
-                if client_s3.get_bucket_location(Bucket=bucket['Name'])['LocationConstraint'] == reg:
-                    bucket_tags = None
+                bucket_tags = None
+                if reg == 'us-east-1':
+                    pass
+                elif client_s3.get_bucket_location(Bucket=bucket['Name'])['LocationConstraint'] == reg:
                     try:
                         bucket_tags = client_s3.get_bucket_tagging(Bucket=bucket['Name'])
                     except ClientError:
@@ -139,9 +142,14 @@ for reg in regions:
                         pass
                     bucket_metric = get_metric(bucket, storage, month, next_month, year, next_year)
                     if len(bucket_metric['Datapoints']) > 0 and bucket_tags is not None:
+                        bucket_dict = {}
+                        bucket_dict = {'bucket_name':bucket['Name'], 'bucket_size':bucket_metric['Datapoints'][0]['Maximum']}
                         for i in bucket_tags['TagSet']:
-                            for tag in i.values():
-                                tags.append(tag)
-                            print(tags)    
-                            # print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tag_key: {(tags.pop(0))} | tag_value: {(tags.pop(0))} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
-                        print(f"{year}-{month} | storage_type: {storage} | bucket_name: {(bucket['Name'])} | tags: {' '.join(str(t) for t in tags)} | bucket_size: {bucket_metric['Datapoints'][0]['Maximum']}")
+                            if i['Key'] == 'coherent:project':
+                                bucket_dict = {'bucket_name':bucket['Name'], 'bucket_size':bucket_metric['Datapoints'][0]['Maximum'], i['Key']:i['Value']}
+                                print(bucket_dict)                            
+                        result_list.append(bucket_dict)
+                        print(result_list)
+
+with open('result.json', 'w') as fp:
+    json.dump(result_list, fp, separators=(',', ': '), indent=4)
