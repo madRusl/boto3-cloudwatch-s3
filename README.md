@@ -5,3 +5,5 @@ python3 -m venv .env
 pip install -r requirements.txt
 python cloudwatch_s3_metrics.py
 ```
+
+stdout and json/csv files as output
