@@ -138,14 +138,12 @@ for region in regions:
                     next_month += 1
                     if next_month == 13:
                         next_month, next_year = 1, year + 1
-                    else: pass
                     metric_response = get_metric(bucket=bk_dict.get('bucket_name'), storage=st, month=month, next_month=next_month, year=year, next_year=next_year)
                     if metric_response['Datapoints']:
                         bk_metric_period = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
                     else:
                         bk_metric_period = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':'0'}
                     bk_dict.setdefault('metrics', []).append(bk_metric_period)
-        else: pass
 
 with open('result.json', 'w') as fp:
     json.dump(list_of_dict, fp, separators=(',', ': '), indent=4, default=str)
