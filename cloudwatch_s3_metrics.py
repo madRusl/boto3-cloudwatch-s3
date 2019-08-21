@@ -10,7 +10,8 @@ from pandas.io.json import json_normalize
 
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 
-list_of_bk_dict = []
+list_of_bk_dict = list()
+list_of_bk_dict_untagged = list()
 storages = [
     'StandardStorage',
     'StandardIAStorage',
@@ -19,11 +20,9 @@ storages = [
     'GlacierS3ObjectOverhead',
     'GlacierObjectOverhead'
     ]
-
-
-s3_client = boto3.client('s3')
-client_ec2 = boto3.client('ec2')
 s3_resource = boto3.resource('s3')
+s3_client = boto3.client('s3')
+ec2_client = boto3.client('ec2')
 
 sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
 em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
@@ -63,20 +62,15 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-if args.region:
-    regions = args.region
-else:
-    try:
-        regions = [region['RegionName'] for region in client_ec2.describe_regions()['Regions']]
-    except Exception as e:
-        print(e)
-
 try:
+    if args.region:
+        regions = args.region
+    else:
+        regions = [region['RegionName'] for region in ec2_client.describe_regions()['Regions']]
     buckets = [bucket.name for bucket in s3_resource.buckets.all()]
+    print(f"\nregions:\n{regions} \n\nbuckets:\n{buckets}\n")
 except Exception as e:
-    print(e)
-
-print(f"\nregions:\n {regions} \n\nbuckets: {buckets}\n")
+    raise(e)
 
 
 def period_iterator(start_month, start_year, end_month, end_year):
@@ -118,18 +112,26 @@ def get_metric(bucket, storage, month, next_month, year, next_year):
 
 for bucket in buckets:
     region_response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)['ResponseMetadata']['HTTPHeaders']['x-amz-bucket-region']
-    bucket_tags = None
     try:
         bucket_tags = s3_client.get_bucket_tagging(Bucket=bucket)
         for i in bucket_tags['TagSet']:
             if i['Key'] == 'coherent:project':
-                bucket_metadata = {'bucket_name':bucket, 'region':region_response, 'project_tag':i['Value']}
+                bucket_metadata = {
+                    'bucket_name':bucket, 
+                    'region':region_response, 
+                    'project_tag':i['Value']
+                }
                 list_of_bk_dict.append(bucket_metadata)
     except ClientError:
-        f=open('untagged_buckets.txt', 'a+')
-        f.write(bucket + '\n')
-        f.close()
+        bucket_metadata_untagged = {
+            'bucket_name':bucket,
+            'region':region_response,
+        }
+        list_of_bk_dict_untagged.append(bucket_metadata_untagged)
         pass
+
+with open('untagged_buckets.json', 'w') as fp:
+    json.dump(list_of_bk_dict_untagged, fp, separators=(',', ': '), indent=4, default=str)
 
 for region in regions:
     client_cloudwatch = boto3.client('cloudwatch', region_name=region)
@@ -146,9 +148,9 @@ for region in regions:
                     metric_response = get_metric(bucket=bk_dict.get('bucket_name'), storage=st, month=month, next_month=next_month, year=year, next_year=next_year)
                     if metric_response['Datapoints']:
                         bk_metric_data = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
-                    else:
-                        bk_metric_data = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':'0'}
-                    bk_dict.setdefault('metrics', []).append(bk_metric_data)
+                        bk_dict.setdefault('metrics', []).append(bk_metric_data)
+
+list_of_bk_dict[:] = [bk for bk in list_of_bk_dict if 'metrics' in bk.keys()]
 
 with open('result.json', 'w') as fp:
     json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
