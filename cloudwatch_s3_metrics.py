@@ -8,27 +8,8 @@ from botocore.exceptions import ClientError
 from pandas.io.json import json_normalize
 
 
-os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
-
-list_of_bk_dict = list()
-list_of_bk_dict_untagged = list()
-storages = [
-    'StandardStorage',
-    'StandardIAStorage',
-    'ReducedRedundancyStorage',
-    'GlacierStorage',
-    'GlacierS3ObjectOverhead',
-    'GlacierObjectOverhead'
-    ]
-s3_resource = boto3.resource('s3')
-s3_client = boto3.client('s3')
-ec2_client = boto3.client('ec2')
-
-sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
-em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
-
 parser = argparse.ArgumentParser(
-    usage='python test.py [-h] [-r REGION]',
+    usage='python cloudwatch_s3_metrics.py [-h] [-r REGION]',
     description='Get s3 metric statistics by region',
     formatter_class=argparse.RawTextHelpFormatter
     )
@@ -61,6 +42,25 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+
+sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
+em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
+
+os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+
+list_of_bk_dict = list()
+list_of_bk_dict_untagged = list()
+storages = [
+    'StandardStorage',
+    'StandardIAStorage',
+    'ReducedRedundancyStorage',
+    'GlacierStorage',
+    'GlacierS3ObjectOverhead',
+    'GlacierObjectOverhead'
+    ]
+s3_resource = boto3.resource('s3')
+s3_client = boto3.client('s3')
+ec2_client = boto3.client('ec2')
 
 try:
     if args.region:
@@ -156,5 +156,5 @@ with open('result.json', 'w') as fp:
     json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
 
 result_output = json_normalize(list_of_bk_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
-print(f"{result_output}")
+print(f"\n{result_output}")
 result_output.to_csv('result.csv', index=False, sep=',')
