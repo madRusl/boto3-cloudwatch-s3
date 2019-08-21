@@ -1,34 +1,30 @@
-import sys
-import argparse
 import boto3
+import json
+import argparse
+import os
+import pandas as pd
 from datetime import datetime
 from botocore.exceptions import ClientError
-import json
+from pandas.io.json import json_normalize
 
 
-#+ create 3x4 buckets, tag them like project (3-4 buckets per project, 3 projects overall) add several files to each bucket
-#+ add options -r region | -p period or period input
-#+ add output storages | year | month | bucket_name | bucket_size
-#- add underline output: bucketsize sum of buckets per project for each month in a period
-#+ catch untagged buckets to file and pass them
-##maybe: represent output results as a list of dicts
-##maybe: output report to csv
+os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 
+list_of_dict = []
+storages = [
+    'StandardStorage',
+    'StandardIAStorage',
+    'ReducedRedundancyStorage',
+    'GlacierStorage',
+    'GlacierS3ObjectOverhead',
+    'GlacierObjectOverhead'
+    ]
 
 sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
 em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
 
-storages = [
-    'StandardStorage',
-    # 'StandardIAStorage',
-    # 'ReducedRedundancyStorage',
-    # 'GlacierStorage',
-    # 'GlacierS3ObjectOverhead',
-    # 'GlacierObjectOverhead'
-    ]
-
 parser = argparse.ArgumentParser(
-    usage='python cloudwatch_s3_metric.py [-h] [-r REGION]',
+    usage='python test.py [-h] [-r REGION]',
     description='Get s3 metric statistics by region',
     formatter_class=argparse.RawTextHelpFormatter
     )
@@ -71,12 +67,6 @@ else:
     except Exception as e:
         print(e)
 
-try:
-    client_s3 = boto3.client('s3')
-    buckets = client_s3.list_buckets()['Buckets']
-except Exception as e:
-    print(e)
-
 
 def period_iterator(start_month, start_year, end_month, end_year):
     month, year = start_month, start_year
@@ -90,14 +80,14 @@ def period_iterator(start_month, start_year, end_month, end_year):
             year += 1
 
 
-def get_metric(bucket_name, storage, month, next_month, year, next_year):
+def get_metric(bucket, storage, month, next_month, year, next_year):
     response = client_cloudwatch.get_metric_statistics(
         Namespace = 'AWS/S3',
         MetricName = 'BucketSizeBytes',
         Dimensions = [
         {
             'Name': 'BucketName',
-            'Value': bucket['Name']
+            'Value': bucket
         },
         {
             'Name': 'StorageType',
@@ -114,42 +104,52 @@ def get_metric(bucket_name, storage, month, next_month, year, next_year):
     )
     return response
 
-result_list = []
 
-for reg in regions:
-    client_cloudwatch = boto3.client('cloudwatch', region_name=reg)
-    print(f'\nregion: {reg}')
-    for storage in storages:
-        for p in period_iterator(sm, sy, em, ey):
-            month, year = p
-            next_month, next_year = month, year
-            next_month += 1
-            if next_month == 13:
-                next_month, next_year = 1, year + 1
-            else: pass
-            for bucket in buckets:
-                tags = []
-                bucket_tags = None
-                if reg == 'us-east-1':
-                    pass
-                elif client_s3.get_bucket_location(Bucket=bucket['Name'])['LocationConstraint'] == reg:
-                    try:
-                        bucket_tags = client_s3.get_bucket_tagging(Bucket=bucket['Name'])
-                    except ClientError:
-                        f=open('untagged_buckets.txt', 'a+')
-                        f.write(reg + ': ' + bucket['Name'] + '\n')
-                        f.close()
-                        pass
-                    bucket_metric = get_metric(bucket, storage, month, next_month, year, next_year)
-                    if len(bucket_metric['Datapoints']) > 0 and bucket_tags is not None:
-                        bucket_dict = {}
-                        bucket_dict = {'bucket_name':bucket['Name'], 'bucket_size':bucket_metric['Datapoints'][0]['Maximum']}
-                        for i in bucket_tags['TagSet']:
-                            if i['Key'] == 'coherent:project':
-                                bucket_dict = {'bucket_name':bucket['Name'], 'bucket_size':bucket_metric['Datapoints'][0]['Maximum'], i['Key']:i['Value']}
-                                print(bucket_dict)                            
-                        result_list.append(bucket_dict)
-                        print(result_list)
+s3_resource = boto3.resource('s3')
+buckets = [bucket.name for bucket in s3_resource.buckets.all()]
+print(f"\nregions:\n {regions} \n\nbuckets: {buckets}\n")
+
+s3_client = boto3.client('s3')
+
+for bucket in buckets:
+    region_response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)['ResponseMetadata']['HTTPHeaders']['x-amz-bucket-region']
+    bucket_tags = None
+    try:
+        bucket_tags = s3_client.get_bucket_tagging(Bucket=bucket)
+        for i in bucket_tags['TagSet']:
+            if i['Key'] == 'coherent:project':
+                bucket_metadata = {'bucket_name':bucket, 'region':region_response, 'project_tag':i['Value']}
+                list_of_dict.append(bucket_metadata)
+    except ClientError:
+        f=open('untagged_buckets.txt', 'a+')
+        f.write(bucket + '\n')
+        f.close()
+        pass
+
+for region in regions:
+    client_cloudwatch = boto3.client('cloudwatch', region_name=region)
+    for bk_dict in list_of_dict:
+        if bk_dict.get('region') == region:
+            for st in storages:
+                for p in period_iterator(sm, sy, em, ey):
+                    bk_metric_period = {}
+                    month, year = p
+                    next_month, next_year = month, year
+                    next_month += 1
+                    if next_month == 13:
+                        next_month, next_year = 1, year + 1
+                    else: pass
+                    metric_response = get_metric(bucket=bk_dict.get('bucket_name'), storage=st, month=month, next_month=next_month, year=year, next_year=next_year)
+                    if metric_response['Datapoints']:
+                        bk_metric_period = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
+                    else:
+                        bk_metric_period = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':'0'}
+                    bk_dict.setdefault('metrics', []).append(bk_metric_period)
+        else: pass
 
 with open('result.json', 'w') as fp:
-    json.dump(result_list, fp, separators=(',', ': '), indent=4)
+    json.dump(list_of_dict, fp, separators=(',', ': '), indent=4, default=str)
+
+result_output = json_normalize(list_of_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
+print(f"{result_output}")
+result_output.to_csv('result.csv', index=False, sep=',')
