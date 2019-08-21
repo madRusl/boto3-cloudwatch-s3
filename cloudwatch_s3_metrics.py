@@ -10,7 +10,7 @@ from pandas.io.json import json_normalize
 
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 
-list_of_dict = []
+list_of_bk_dict = []
 storages = [
     'StandardStorage',
     'StandardIAStorage',
@@ -19,6 +19,11 @@ storages = [
     'GlacierS3ObjectOverhead',
     'GlacierObjectOverhead'
     ]
+
+
+s3_client = boto3.client('s3')
+client_ec2 = boto3.client('ec2')
+s3_resource = boto3.resource('s3')
 
 sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
 em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
@@ -62,10 +67,16 @@ if args.region:
     regions = args.region
 else:
     try:
-        client_ec2 = boto3.client('ec2')
         regions = [region['RegionName'] for region in client_ec2.describe_regions()['Regions']]
     except Exception as e:
         print(e)
+
+try:
+    buckets = [bucket.name for bucket in s3_resource.buckets.all()]
+except Exception as e:
+    print(e)
+
+print(f"\nregions:\n {regions} \n\nbuckets: {buckets}\n")
 
 
 def period_iterator(start_month, start_year, end_month, end_year):
@@ -105,12 +116,6 @@ def get_metric(bucket, storage, month, next_month, year, next_year):
     return response
 
 
-s3_resource = boto3.resource('s3')
-buckets = [bucket.name for bucket in s3_resource.buckets.all()]
-print(f"\nregions:\n {regions} \n\nbuckets: {buckets}\n")
-
-s3_client = boto3.client('s3')
-
 for bucket in buckets:
     region_response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)['ResponseMetadata']['HTTPHeaders']['x-amz-bucket-region']
     bucket_tags = None
@@ -119,7 +124,7 @@ for bucket in buckets:
         for i in bucket_tags['TagSet']:
             if i['Key'] == 'coherent:project':
                 bucket_metadata = {'bucket_name':bucket, 'region':region_response, 'project_tag':i['Value']}
-                list_of_dict.append(bucket_metadata)
+                list_of_bk_dict.append(bucket_metadata)
     except ClientError:
         f=open('untagged_buckets.txt', 'a+')
         f.write(bucket + '\n')
@@ -128,11 +133,11 @@ for bucket in buckets:
 
 for region in regions:
     client_cloudwatch = boto3.client('cloudwatch', region_name=region)
-    for bk_dict in list_of_dict:
+    for bk_dict in list_of_bk_dict:
         if bk_dict.get('region') == region:
             for st in storages:
                 for p in period_iterator(sm, sy, em, ey):
-                    bk_metric_period = {}
+                    bk_metric_data = {}
                     month, year = p
                     next_month, next_year = month, year
                     next_month += 1
@@ -140,14 +145,14 @@ for region in regions:
                         next_month, next_year = 1, year + 1
                     metric_response = get_metric(bucket=bk_dict.get('bucket_name'), storage=st, month=month, next_month=next_month, year=year, next_year=next_year)
                     if metric_response['Datapoints']:
-                        bk_metric_period = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
+                        bk_metric_data = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
                     else:
-                        bk_metric_period = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':'0'}
-                    bk_dict.setdefault('metrics', []).append(bk_metric_period)
+                        bk_metric_data = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':'0'}
+                    bk_dict.setdefault('metrics', []).append(bk_metric_data)
 
 with open('result.json', 'w') as fp:
-    json.dump(list_of_dict, fp, separators=(',', ': '), indent=4, default=str)
+    json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
 
-result_output = json_normalize(list_of_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
+result_output = json_normalize(list_of_bk_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
 print(f"{result_output}")
 result_output.to_csv('result.csv', index=False, sep=',')
