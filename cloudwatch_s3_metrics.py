@@ -8,69 +8,8 @@ from botocore.exceptions import ClientError
 from pandas.io.json import json_normalize
 
 
-parser = argparse.ArgumentParser(
-    usage='python cloudwatch_s3_metrics.py [-h] [-r REGION]',
-    description='Get s3 metric statistics by region',
-    formatter_class=argparse.RawTextHelpFormatter
-    )
-
-parser.add_argument(
-    '-r',
-    '--region',
-    action = 'store',
-    dest = 'region',
-    nargs = '*',
-    help = 'Specify one or multiple regions (default: all): \
-        \nus-east-1, us-east-2 \
-        \nus-west-1, us-west-2 \
-        \nap-east-1 \
-        \nap-south-1 \
-        \nap-northeast-2 \
-        \nap-southeast-1, ap-southeast-2 \
-        \nap-northeast-1 \
-        \nca-central-1 \
-        \ncn-north-1 \
-        \ncn-northwest-1 \
-        \neu-central-1 \
-        \neu-west-1, eu-west-2, eu-west-3 \
-        \neu-north-1 \
-        \nme-south-1 \
-        \nsa-east-1 \
-        \nus-gov-east-1 \
-        \nus-gov-west-1',
-    type=str,
-)
-
-args = parser.parse_args()
-
-sm, sy = [int(x) for x in input('Enter start date (MM-YYYY) (month including):\n').split('-')]
-em, ey = [int(x) for x in input('Enter end date (MM-YYYY) (month including):\n').split('-')]
-
-os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
-
-list_of_bk_dict = list()
-list_of_bk_dict_untagged = list()
-storages = [
-    'StandardStorage',
-    'StandardIAStorage',
-    'ReducedRedundancyStorage',
-    'GlacierStorage',
-    'GlacierS3ObjectOverhead',
-    'GlacierObjectOverhead'
-    ]
-s3_resource = boto3.resource('s3')
-s3_client = boto3.client('s3')
-ec2_client = boto3.client('ec2')
-
-try:
-    if args.region:
-        regions = args.region
-    else:
-        regions = [region['RegionName'] for region in ec2_client.describe_regions()['Regions']]
-    buckets = [bucket.name for bucket in s3_resource.buckets.all()]
-    print(f"\nregions:\n{regions} \n\nbuckets:\n{buckets}\n")
-except Exception as e:
-    raise(e)
+def mkdate(datestring):
+    return datetime.strptime(datestring, '%Y-%m')
 
 
 def period_iterator(start_month, start_year, end_month, end_year):
@@ -109,6 +48,94 @@ def get_metric(bucket, storage, month, next_month, year, next_year):
     )
     return response
 
+
+parser = argparse.ArgumentParser(
+    usage='python cloudwatch_s3_metrics.py [-h] [-r REGION]',
+    description='Get s3 metric statistics by region',
+    formatter_class=argparse.RawTextHelpFormatter
+    )
+
+parser.add_argument(
+    '-r',
+    '--region',
+    action = 'store',
+    dest = 'region',
+    nargs = '*',
+    help = 'Specify one or multiple regions (default: all): \
+        \nus-east-1, us-east-2 \
+        \nus-west-1, us-west-2 \
+        \nap-east-1 \
+        \nap-south-1 \
+        \nap-northeast-2 \
+        \nap-southeast-1, ap-southeast-2 \
+        \nap-northeast-1 \
+        \nca-central-1 \
+        \ncn-north-1 \
+        \ncn-northwest-1 \
+        \neu-central-1 \
+        \neu-west-1, eu-west-2, eu-west-3 \
+        \neu-north-1 \
+        \nme-south-1 \
+        \nsa-east-1 \
+        \nus-gov-east-1 \
+        \nus-gov-west-1',
+    type=str,
+)
+
+parser.add_argument(
+    '-s', 
+    '--start', 
+    action='store', 
+    dest='start_date',
+    help = 'start date format YYYY-MM (inclusive)',
+    type = mkdate
+    )
+
+parser.add_argument(
+    '-e',
+    '--end', 
+    action='store', 
+    dest='end_date',
+    help = 'end date format YYYY-MM (inclusive)', 
+    type = mkdate
+    )
+
+args = parser.parse_args()
+
+if args.start_date and args.end_date:
+    sy, sm = args.start_date.year, args.start_date.month
+    ey, em = args.end_date.year, args.end_date.month
+else:
+    print('No period selection with "-s" and "-e" arguments.')
+    sy, sm = [int(x) for x in input('Enter start date in format YYYY-MM (inclusive):\n').split('-')]
+    ey, em = [int(x) for x in input('Enter end date in format YYYY-MM (inclusive):\n').split('-')]
+
+os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
+
+list_of_bk_dict = list()
+list_of_bk_dict_untagged = list()
+storages = [
+    'StandardStorage',
+    'StandardIAStorage',
+    'ReducedRedundancyStorage',
+    'GlacierStorage',
+    'GlacierS3ObjectOverhead',
+    'GlacierObjectOverhead'
+    ]
+    
+s3_resource = boto3.resource('s3')
+s3_client = boto3.client('s3')
+ec2_client = boto3.client('ec2')
+
+try:
+    if args.region:
+        regions = args.region
+    else:
+        regions = [region['RegionName'] for region in ec2_client.describe_regions()['Regions']]
+    buckets = [bucket.name for bucket in s3_resource.buckets.all()]
+    print(f"\nregions:\n{regions} \n\nbuckets:\n{buckets}\n")
+except Exception as e:
+    raise(e)
 
 for bucket in buckets:
     region_response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)['ResponseMetadata']['HTTPHeaders']['x-amz-bucket-region']
