@@ -1,9 +1,9 @@
 import boto3
+import pandas as pd
+import numpy as np
 import json
 import argparse
 import os
-import pandas as pd
-import numpy as np
 from datetime import datetime
 from botocore.exceptions import ClientError
 from pandas.io.json import json_normalize
@@ -116,6 +116,7 @@ os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 list_of_bk_dict = list()
 list_of_bk_dict_untagged = list()
 output_rows = list()
+project_key = 'coherent:project'
 storages = [
     'StandardStorage',
     'StandardIAStorage',
@@ -144,7 +145,7 @@ for bucket in buckets:
     try:
         bucket_tags = s3_client.get_bucket_tagging(Bucket=bucket)
         for i in bucket_tags['TagSet']:
-            if i['Key'] == 'coherent:project':
+            if i['Key'] == project_key:
                 bucket_metadata = {
                     'bucket_name':bucket, 
                     'region':region_response, 

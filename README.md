@@ -7,7 +7,7 @@ python cloudwatch_s3_metrics.py -h
 ```
 ignored buckets:
 ```
-buckets w/o tag key 'coherent:project';
+buckets w/o tag key specified in project_key var;
 buckets with empty metrics
 ```
 stdout and json/csv files as output
