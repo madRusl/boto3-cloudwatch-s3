@@ -3,6 +3,7 @@ import json
 import argparse
 import os
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from botocore.exceptions import ClientError
 from pandas.io.json import json_normalize
@@ -114,6 +115,7 @@ os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
 
 list_of_bk_dict = list()
 list_of_bk_dict_untagged = list()
+output_rows = list()
 storages = [
     'StandardStorage',
     'StandardIAStorage',
@@ -179,9 +181,34 @@ for region in regions:
 
 list_of_bk_dict[:] = [bk for bk in list_of_bk_dict if 'metrics' in bk.keys()]
 
-with open('result.json', 'w') as fp:
-    json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
+try: 
+    with open('result.json', 'w') as fp:
+        json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
+except Exception as e:
+    raise(e)
+    pass
 
-result_output = json_normalize(list_of_bk_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
-print(f"\n{result_output}")
-result_output.to_csv('result.csv', index=False, sep=',')
+try:
+    result_output = json_normalize(list_of_bk_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
+    result_output.to_csv('result.csv', index=False, sep=',')
+    print(f"\n{result_output}")
+except Exception as e:
+    raise(e)
+    pass
+
+try:
+    for bk_dict in list_of_bk_dict:
+        bk_row = bk_dict['metrics'] 
+        bk_project_tag = bk_dict['project_tag']
+        bk_region = bk_dict['region']
+        for row in bk_row:
+            row['project_tag'] = bk_project_tag
+            row['region'] = bk_region
+            output_rows.append(row)
+
+    df = pd.DataFrame(output_rows)
+    df = df.pivot_table(index=['project_tag', 'region', 'storage_class'], columns=['date'], values=['size'], fill_value=0, aggfunc=np.sum).reset_index()
+    df.to_csv('result_sum.csv', index=False, sep=',')
+except Exception as e:
+    raise(e)
+    pass
