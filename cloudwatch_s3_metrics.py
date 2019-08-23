@@ -15,14 +15,17 @@ def mkdate(datestring):
 
 def period_iterator(start_month, start_year, end_month, end_year):
     month, year = start_month, start_year
+    next_month, next_year = month+1, year
     while True:
-        yield month, year
-        if (month, year) == (end_month, end_year):
+        yield month, year, next_month, next_year
+        if (next_month, next_year) == (end_month, end_year):
             return
-        month += 1
-        if (month > 12):
-            month = 1
-            year += 1
+        month = next_month
+        year = next_year
+        next_month += 1
+        if (next_month > 12):
+            next_month = 1
+            next_year += 1
 
 
 def get_metric(bucket, storage, month, next_month, year, next_year):
@@ -169,12 +172,8 @@ for region in regions:
         if bk_dict.get('region') == region:
             for st in storages:
                 for p in period_iterator(sm, sy, em, ey):
+                    month, year, next_month, next_year = p
                     bk_metric_data = {}
-                    month, year = p
-                    next_month, next_year = month, year
-                    next_month += 1
-                    if next_month == 13:
-                        next_month, next_year = 1, year + 1
                     metric_response = get_metric(bucket=bk_dict.get('bucket_name'), storage=st, month=month, next_month=next_month, year=year, next_year=next_year)
                     if metric_response['Datapoints']:
                         bk_metric_data = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
