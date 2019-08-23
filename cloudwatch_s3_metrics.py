@@ -115,7 +115,6 @@ else:
     ey, em = [int(x) for x in input('Enter end date in format YYYY-MM (inclusive):\n').split('-')]
 
 os.environ['AWS_DEFAULT_REGION'] = 'us-east-1'
-
 list_of_bk_dict = list()
 list_of_bk_dict_untagged = list()
 output_rows = list()
@@ -173,7 +172,6 @@ for region in regions:
             for st in storages:
                 for p in period_iterator(sm, sy, em, ey):
                     month, year, next_month, next_year = p
-                    bk_metric_data = {}
                     metric_response = get_metric(bucket=bk_dict.get('bucket_name'), storage=st, month=month, next_month=next_month, year=year, next_year=next_year)
                     if metric_response['Datapoints']:
                         bk_metric_data = {'storage_class':st, 'date':datetime(year, month, 1).strftime('%Y-%m'), 'size':metric_response['Datapoints'][0]['Maximum']}
@@ -181,34 +179,22 @@ for region in regions:
 
 list_of_bk_dict[:] = [bk for bk in list_of_bk_dict if 'metrics' in bk.keys()]
 
-try: 
-    with open('result.json', 'w') as fp:
-        json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
-except Exception as e:
-    raise(e)
-    pass
+with open('result.json', 'w') as fp:
+    json.dump(list_of_bk_dict, fp, separators=(',', ': '), indent=4, default=str)
 
-try:
-    result_output = json_normalize(list_of_bk_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
-    result_output.to_csv('result.csv', index=False, sep=',')
-    print(f"\n{result_output}")
-except Exception as e:
-    raise(e)
-    pass
+result_output = json_normalize(list_of_bk_dict, record_path=['metrics'], meta=['bucket_name', 'region', 'project_tag'])
+result_output.to_csv('result.csv', index=False, sep=',')
+print(f"\n{result_output}")
 
-try:
-    for bk_dict in list_of_bk_dict:
-        bk_row = bk_dict['metrics'] 
-        bk_project_tag = bk_dict['project_tag']
-        bk_region = bk_dict['region']
-        for row in bk_row:
-            row['project_tag'] = bk_project_tag
-            row['region'] = bk_region
-            output_rows.append(row)
+for bk_dict in list_of_bk_dict:
+    bk_row = bk_dict['metrics'] 
+    bk_project_tag = bk_dict['project_tag']
+    bk_region = bk_dict['region']
+    for row in bk_row:
+        row['project_tag'] = bk_project_tag
+        row['region'] = bk_region
+        output_rows.append(row)
 
-    df = pd.DataFrame(output_rows)
-    df = df.pivot_table(index=['project_tag', 'region', 'storage_class'], columns=['date'], values=['size'], fill_value=0, aggfunc=np.sum).reset_index()
-    df.to_csv('result_sum.csv', index=False, sep=',')
-except Exception as e:
-    raise(e)
-    pass
+df = pd.DataFrame(output_rows)
+df = df.pivot_table(index=['project_tag', 'region', 'storage_class'], columns=['date'], values=['size'], fill_value=0, aggfunc=np.sum).reset_index()
+df.to_csv('result_sum.csv', index=False, sep=',')
