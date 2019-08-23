@@ -5,6 +5,9 @@ python3 -m venv .env
 pip install -r requirements.txt
 python cloudwatch_s3_metrics.py
 ```
-buckets should have tag key 'coherent:project', otherwise ignored
-buckets with empty metrics ignored
+ignored buckets:
+```
+buckets w/o tag key 'coherent:project';
+buckets with empty metrics
+```
 stdout and json/csv files as output
