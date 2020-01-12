@@ -144,8 +144,7 @@ except Exception as e:
 
 for bucket in buckets:
     region_response = s3_client.list_objects_v2(Bucket=bucket, MaxKeys=1)[
-        "ResponseMetadata"
-    ]["HTTPHeaders"]["x-amz-bucket-region"]
+        "ResponseMetadata"]["HTTPHeaders"]["x-amz-bucket-region"]
     try:
         bucket_tags = s3_client.get_bucket_tagging(Bucket=bucket)
         for i in bucket_tags["TagSet"]:
